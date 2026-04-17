@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 import os
 import platform
-import socket
 import subprocess
-import sys
 
 
 def get(key):
@@ -11,14 +9,18 @@ def get(key):
         with open(f"/sys/class/dmi/id/{key}") as f:
             return f.read().strip()
     except:
-        return "Unknown"
+        return ""
 
 
 def cmd(cmd):
     try:
-        return subprocess.check_output(cmd, shell=True).decode().strip()
+        return (
+            subprocess.check_output(cmd, shell=True, stderr=subprocess.DEVNULL)
+            .decode()
+            .strip()
+        )
     except:
-        return "Unknown"
+        return ""
 
 
 def get_distro():
@@ -27,22 +29,25 @@ def get_distro():
             for line in f:
                 if line.startswith("PRETTY_NAME"):
                     return line.split("=")[1].strip('"')
+                if line.startswith("NAME"):
+                    return line.split("=")[1].strip('"')
     except:
         pass
     return "Linux"
 
 
 def get_uptime():
-    uptime = cmd("cat /proc/uptime | awk '{print int($1)}'")
-    if uptime == "Unknown":
+    try:
+        with open("/proc/uptime") as f:
+            seconds = int(float(f.read().split()[0]))
+            days = seconds // 86400
+            hours = (seconds % 86400) // 3600
+            mins = (seconds % 3600) // 60
+            if days > 0:
+                return f"{days}d {hours}h {mins}m"
+            return f"{hours}h {mins}m"
+    except:
         return "Unknown"
-    seconds = int(uptime)
-    days = seconds // 86400
-    hours = (seconds % 86400) // 3600
-    mins = (seconds % 3600) // 60
-    if days > 0:
-        return f"{days}d {hours}h {mins}m"
-    return f"{hours}h {mins}m"
 
 
 def get_memory():
@@ -68,7 +73,8 @@ def get_cpu():
                     return line.split(":")[1].strip()
     except:
         pass
-    return cmd("lscpu | grep 'Model name' | cut -d: -f2 | xargs")
+    cpu = cmd("lscpu 2>/dev/null | grep 'Model name' | cut -d: -f2 | xargs")
+    return cpu if cpu else "Unknown"
 
 
 def get_kernel():
@@ -76,7 +82,10 @@ def get_kernel():
 
 
 def get_host():
-    return get("product_name") or get("board_name") or "Unknown"
+    h = get("product_name") or get("board_name") or ""
+    if not h:
+        h = cmd("hostname")
+    return h if h else "Unknown"
 
 
 def get_os():
@@ -85,27 +94,29 @@ def get_os():
 
 def get_resolution():
     res = cmd("xrandr 2>/dev/null | grep '*' | head -1 | awk '{print $1}'")
-    return res if res != "Unknown" else "Unknown"
+    return res if res else "Unknown"
 
 
 def get_shell():
-    return os.environ.get("SHELL", "Unknown").split("/")[-1]
+    s = os.environ.get("SHELL", "")
+    return s.split("/")[-1] if s else "Unknown"
 
 
 def get_de():
-    session = os.environ.get("XDG_CURRENT_DESKTOP", "")
-    if session:
-        return session
-    session = cmd("echo $DESKTOP_SESSION")
-    return session if session != "Unknown" else "Unknown"
+    de = os.environ.get("XDG_CURRENT_DESKTOP", "")
+    if de:
+        return de
+    de = os.environ.get("DESKTOP_SESSION", "")
+    if de:
+        return de
+    return "Unknown"
 
 
 def get_gpu():
-    try:
-        gpus = cmd("lspci | grep -i vga | cut -d: -f3").split("\n")
-        return gpus[0].strip() if gpus else "Unknown"
-    except:
-        return "Unknown"
+    gpus = cmd("lspci 2>/dev/null | grep -i vga | cut -d: -f3")
+    if gpus:
+        return gpus.split("\n")[0].strip()
+    return "Unknown"
 
 
 colors = [
